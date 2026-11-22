@@ -2,19 +2,9 @@
 Changelog for package genicam_driver_msgs
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+This project is maintained independently. The entries below start from the
+current baseline; release notes from before that point are not carried over.
+
 1.2.0 (2026-03-09)
 ------------------
-* other: add miguel as maintainer
-* Contributors: Miguel Granero
-
-1.1.0 (2024-12-12)
-------------------
-* Update maintainer -> Raphael Hagmanns
-* Added dynamic paramters.
-* Added service to manually trigger computation of white balance.
-* Contributors: Boitumelo Ruf
-
-1.0.0 (2024-07-15)
-------------------
-* Added genicam_driver specific messages
-* Contributors: Boitumelo Ruf
+* Independent maintenance baseline: package name and interface definitions.

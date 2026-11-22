@@ -4,8 +4,7 @@
   <name>genicam_driver_msgs</name>
   <version>1.2.0</version>
   <description>Messages and service definitions for the genicam_driver package.</description>
-  <maintainer email="raphael.hagmanns@iosb.fraunhofer.de">Raphael Hagmanns</maintainer>
-  <maintainer email="miguel.granero@iosb.fraunhofer.de">Miguel Granero</maintainer>
+  <maintainer email="236466140+xia-chao@users.noreply.github.com">Xia Chao</maintainer>
   <license>BSD</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

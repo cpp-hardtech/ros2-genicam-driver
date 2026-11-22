@@ -4,8 +4,7 @@
   <name>genicam_driver</name>
   <version>1.2.0</version>
   <description>ROS2 camera driver for [GenICam](https://www.emva.org/standards-technology/genicam/)-based GigEVision and USB3Vision cameras.</description>
-  <maintainer email="raphael.hagmanns@iosb.fraunhofer.de">Raphael Hagmanns</maintainer>
-  <maintainer email="miguel.granero@iosb.fraunhofer.de">Miguel Granero</maintainer>
+  <maintainer email="236466140+xia-chao@users.noreply.github.com">Xia Chao</maintainer>
   <license>BSD</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
