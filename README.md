@@ -4,27 +4,36 @@
 
 <h1 align="center">ROS 2 GenICam Driver</h1>
 
-<p align="center"><strong>A C++ ROS 2 driver for industrial GigE Vision and USB3 Vision cameras.</strong></p>
+<p align="center"><strong>A ROS 2 driver for industrial GigE Vision and USB3 Vision cameras.</strong></p>
 
-<p align="center">
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#camera-configuration">Configuration</a> ·
-  <a href="#device-inspection">Device inspection</a> ·
-  <a href="#roadmap">Roadmap</a>
-</p>
+ROS 2 GenICam Driver connects GenICam-compatible industrial cameras to ROS 2 through the
+Aravis library. It discovers devices on the network or bus, exposes camera features as ROS 2
+parameters, and publishes images and camera information for downstream perception,
+inspection, and calibration nodes.
 
-ROS 2 GenICam Driver connects industrial cameras to ROS 2 through the Aravis library. It discovers devices, configures camera features, and publishes images and camera information for downstream perception or inspection nodes. It also supports multiple streams and optional camera diagnostics.
+Supported transports are GigE Vision and USB3 Vision. A single node can drive several
+streams, selected camera features can be re-exposed as dynamically changeable ROS 2
+parameters, and a configurable set of device features can be published as diagnostics.
 
-| Transport | ROS 2 executable | Launch example |
-| --- | --- | --- |
-| GigE Vision | `camera_driver_gv` | [GigE Vision example](camera_aravis2/launch/camera_driver_gv_example.launch.py) |
-| USB3 Vision | `camera_driver_uv` | [USB3 Vision example](camera_aravis2/launch/camera_driver_uv_example.launch.py) |
+## Executables
 
-## Quick start
+| Executable | Purpose |
+| --- | --- |
+| `camera_finder` | Enumerate reachable devices and print their identifiers. |
+| `camera_driver_gv` | Drive one or more GigE Vision cameras. |
+| `camera_driver_uv` | Drive one or more USB3 Vision cameras. |
+| `camera_xml_exporter` | Write the GenICam feature description of a device to an XML file. |
 
-### Build on Ubuntu
+## Requirements
 
-The driver uses C++17, Aravis 0.8 or later, and ROS 2. This example uses a ROS 2 Jazzy installation and the usual `rosdep` and `colcon` workspace tools.
+- ROS 2 on Ubuntu. The CI matrix covers Humble, Iron, Jazzy, Kilted, and Lyrical.
+- C++17 compiler and CMake 3.16 or newer.
+- Aravis 0.8 or newer, including its development headers.
+- The GenICam runtime that ships with your camera vendor, if the camera requires one.
+
+## Build
+
+The driver and its message package live in this repository and are built together.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -32,60 +41,114 @@ sudo apt install libaravis-dev
 
 mkdir -p camera_ws/src
 cd camera_ws
-git clone https://github.com/cpp-hardtech/ros2-genicam-driver.git src/camera_aravis2
+git clone https://github.com/cpp-hardtech/ros2-genicam-driver.git src/ros2-genicam-driver
 
 rosdep update
 rosdep install --from-paths src --ignore-src -y
-colcon build --symlink-install --packages-up-to camera_aravis2
+colcon build --symlink-install --packages-up-to genicam_driver
 source install/setup.bash
 ```
 
-On a fresh ROS installation, run `sudo rosdep init` once before `rosdep update`. Both the driver and its message package are included in the checkout.
+On a fresh ROS 2 installation, run `sudo rosdep init` once before `rosdep update`.
 
-### Discover a camera and start streaming
+## Quick start
 
-Run the finder with the camera attached. Copy the device identifier it reports into `CAMERA_ID`. For GigE Vision, the device IP address can also be used.
+### 1. Find the device
 
-```bash
-ros2 run camera_aravis2 camera_finder
-```
+Attach the camera and enumerate the reachable devices:
 
 ```bash
-CAMERA_ID='replace-with-device-identifier'
-ros2 run camera_aravis2 camera_driver_gv --ros-args -p "guid:=$CAMERA_ID"
+ros2 run genicam_driver camera_finder
 ```
 
-For a USB3 Vision camera, use `camera_driver_uv` in the second command. In another terminal with the workspace sourced, run `ros2 topic list` and subscribe to the image topic with your ROS 2 viewer or consumer. On Jazzy and later, a subscriber can trigger acquisition.
+The finder prints a device identifier for each camera. Use that value as `guid` below. For
+GigE Vision cameras the device IP address is also accepted.
 
-## Camera configuration
-
-Use the launch file for your transport as a starting point. Set `guid` to select a specific camera and give each stream a distinct name where needed.
-
-- **Image and acquisition.** Use `ImageFormatControl` for pixel format and the region of interest. Use `AcquisitionControl` for exposure and frame rate. Available feature names and accepted values depend on the camera model.
-- **Camera information.** Use `camera_info_urls` for per-stream calibration data and `frame_id` to identify the coordinate frame in ROS 2.
-- **Timing.** Enable `TransportLayerControl.PtpEnable` on supported GigE Vision cameras when the installation uses PTP. Validate timestamps against the actual camera and network configuration.
-- **Runtime controls.** Use `dynamic_parameters_yaml_url` to expose selected features as changeable ROS 2 parameters. See the [dynamic parameter example](camera_aravis2/config/dynamic_parameters_example.yaml).
-- **Diagnostics.** Choose the features to monitor with `diagnostic_yaml_url` and set the update rate with `diagnostic_publish_rate`. The node publishes the selected values on its private `diagnostics` topic using [CameraDiagnostics](camera_aravis2_msgs/msg/CameraDiagnostics.msg). See the [diagnostics example](camera_aravis2/config/camera_diagnostics_example.yaml).
-
-## Device inspection
-
-Export the GenICam XML to check the features and constraints exposed by a device. Use the same `CAMERA_ID` as above.
+### 2. Start the driver
 
 ```bash
-ros2 run camera_aravis2 camera_xml_exporter --ros-args \
-  -p "guid:=$CAMERA_ID" -p "xml_file:=$PWD/camera.xml"
+ros2 run genicam_driver camera_driver_gv --ros-args -p "guid:=<device-identifier>"
 ```
 
-## Roadmap
+For a USB3 Vision camera use `camera_driver_uv` instead.
 
-The following milestones are planned for the `cpp-hardtech` edition.
+### 3. Consume the stream
 
-- **Recover from loss of camera control.** Reopen the same device with bounded retry intervals, restore acquisition settings, and report the state of the connection throughout recovery.
-- **Bound frame queues under load.** Add a configurable overflow policy and counters that distinguish transport failures from frames discarded in the driver.
-- **Measure recovery and latency.** Use a simulated GigE Vision device for repeatable fault scenarios. Use compatible cameras to validate recovery after physical disconnects and measure time to the first recovered frame, dropped frames, and P95 latency.
+In a second terminal, with the workspace sourced:
+
+```bash
+ros2 topic list
+ros2 topic hz /genicam_driver_gv/image_raw
+```
+
+The launch files under `genicam_driver/launch/` provide working starting points for both
+transports:
+
+- `camera_driver_gv_example.launch.py`
+- `camera_driver_uv_example.launch.py`
+- `camera_xml_exporter_example.launch.py`
+
+## Topics and services
+
+### Published topics
+
+| Topic | Type | Notes |
+| --- | --- | --- |
+| `<node>/image_raw` | `sensor_msgs/msg/Image` | Per stream. |
+| `<node>/camera_info` | `sensor_msgs/msg/CameraInfo` | Per stream, next to the corresponding image topic. |
+| `<node>/<stream>/image_raw` | `sensor_msgs/msg/Image` | Used instead when several streams are configured. |
+| `<node>/<stream>/camera_info` | `sensor_msgs/msg/CameraInfo` | Same naming rule as above. |
+| `~/diagnostics` | `genicam_driver_msgs/msg/CameraDiagnostics` | Only when diagnostic features are configured. |
+
+### Services
+
+| Service | Type | Notes |
+| --- | --- | --- |
+| `~/calculate_white_balance_once` | `genicam_driver_msgs/srv/CalculateWhiteBalance` | Runs a one-shot white balance calculation on the device. |
+
+## Parameters
+
+| Parameter | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `guid` | string | — | Device identifier reported by `camera_finder`, or a GigE Vision IP address. |
+| `stream_names` | string[] | `[]` | Stream names used in the topic namespace when several streams are driven. |
+| `camera_info_urls` | string[] | `[]` | Calibration URLs, one per stream, passed to `camera_info_manager`. |
+| `frame_id` | string | `""` | Coordinate frame attached to published images and camera info. |
+| `dynamic_parameters_yaml_url` | string | `""` | YAML file listing device features to expose as dynamic ROS 2 parameters. |
+| `diagnostic_yaml_url` | string | `""` | YAML file listing device features to publish as diagnostics. |
+| `diagnostic_publishing_rate` | double | `0.1` | Diagnostics publish rate in Hz. |
+| `verbose` | bool | `false` | Enables additional logging from the driver. |
+| `timestamp_offset` | double | `0.0` | Constant offset applied to image timestamps. |
+| `xml_file` | string | `""` | Output path, `camera_xml_exporter` only. |
+
+## Configuration files
+
+- `genicam_driver/config/dynamic_parameters_example.yaml` — which device features become
+  runtime-changeable ROS 2 parameters.
+- `genicam_driver/config/camera_diagnostics_example.yaml` — which device features are
+  published on `~/diagnostics` and under what names.
+
+Feature names and accepted values are defined by the device and can be listed with
+`camera_xml_exporter`, which writes the GenICam XML description of the camera:
+
+```bash
+ros2 run genicam_driver camera_xml_exporter --ros-args \
+  -p "guid:=<device-identifier>" -p "xml_file:=$PWD/camera.xml"
+```
+
+## Multi-stream nodes
+
+Set `stream_names` to one name per stream. The names form the topic namespace, so a node with
+`stream_names: ["left", "right"]` publishes `<node>/left/image_raw` and
+`<node>/right/image_raw`. Leave the parameter empty to keep the topics directly under the
+node name.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
 Distributed under the BSD 3-Clause License. The original copyright notice and the full
-license text are retained in [LICENSE](LICENSE). Provenance and attribution
-are documented in [NOTICE](NOTICE).
+license text are retained in [LICENSE](LICENSE). Provenance and attribution are documented
+in [NOTICE](NOTICE).
