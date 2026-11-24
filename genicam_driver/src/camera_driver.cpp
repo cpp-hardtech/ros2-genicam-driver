@@ -32,6 +32,7 @@
 #include <image_transport/camera_common.hpp>
 #include <rcl_interfaces/msg/floating_point_range.hpp>
 #include <rcl_interfaces/msg/integer_range.hpp>
+#include <rclcpp/expand_topic_or_service_name.hpp>
 #include <rclcpp/time.hpp>
 
 /// Conversions from integers to Arv types.
@@ -214,7 +215,7 @@ bool CameraDriver::setupCameraStreamStructs()
         Stream& stream = streams_[i];
 
         //--- if no or insufficient stream names are specified, use ID as name
-        stream.name            = (i < stream_names.size())
+        stream.name            = (i < stream_names.size() && !stream_names[i].empty())
                                    ? stream_names[i]
                                    : ("stream" + std::to_string(i));
         stream.sensor.frame_id = (!stream_names.empty() || num_streams > 1)
@@ -248,6 +249,17 @@ bool CameraDriver::setupCameraStreamStructs()
         if (!stream_names.empty() || num_streams > 1)
             topic_name += "/" + stream.name;
         topic_name += "/image_raw";
+
+        try
+        {
+            rclcpp::expand_topic_or_service_name(topic_name, get_name(), get_namespace());
+        }
+        catch (const rclcpp::exceptions::InvalidTopicNameError& error)
+        {
+            RCLCPP_ERROR(logger_, "Invalid stream name '%s': %s", stream.name.c_str(),
+                         error.what());
+            return false;
+        }
 
         rclcpp::PublisherOptions pub_options;
 #ifndef WITH_MATCHED_EVENTS
@@ -1729,13 +1741,12 @@ void CameraDriver::spawnCameraStreams()
             RCLCPP_ERROR(logger_, "%s: Could not create image stream with ID %i (%s).",
                          guid_.c_str(), i, stream.name.c_str());
     }
-    is_spawning_ = false;
-
     //--- if no streams are opened, shut down
     if (num_opened_streams == 0)
     {
         RCLCPP_FATAL(logger_, "Failed to open streams for camera %s.",
                      guid_.c_str());
+        is_spawning_ = false;
         return;
     }
 
@@ -1774,6 +1785,7 @@ void CameraDriver::spawnCameraStreams()
 
     //--- When there are already subscribers, start acquisition.
     handleMessageSubscriptionChange();
+    is_spawning_ = false;
 }
 
 //==================================================================================================

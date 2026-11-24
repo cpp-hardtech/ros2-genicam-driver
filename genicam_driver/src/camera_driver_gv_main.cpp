@@ -26,6 +26,8 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <chrono>
+
 // ROS
 #include <rclcpp/rclcpp.hpp>
 
@@ -38,18 +40,18 @@ int main(int argc, char** argv)
 
     auto p_node = std::make_shared<genicam_driver::CameraDriverGv>();
 
-    bool is_successful = false;
-    if (p_node)
+    if (rclcpp::ok() && (p_node->isSpawning() || p_node->isInitialized()))
     {
-        if (p_node->isSpawning() || p_node->isInitialized())
-        {
-            rclcpp::spin(p_node->get_node_base_interface());
-        }
+        rclcpp::executors::SingleThreadedExecutor executor;
+        executor.add_node(p_node->get_node_base_interface());
+        while (rclcpp::ok() && p_node->isSpawning())
+            executor.spin_once(std::chrono::milliseconds(100));
 
-        //--- check if driver was initialized, i.e. if it has successfully spawned a camera stream
-        is_successful = p_node->isInitialized();
+        if (rclcpp::ok() && p_node->isInitialized())
+            executor.spin();
     }
 
+    const bool is_successful = p_node->isInitialized();
     rclcpp::shutdown();
 
     return is_successful ? EXIT_SUCCESS : EXIT_FAILURE;
