@@ -26,14 +26,15 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <arv.h>
+#include <yaml-cpp/yaml.h>
+
 #include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <string>
 
-#include <arv.h>
 #include <rclcpp/rclcpp.hpp>
-#include <yaml-cpp/yaml.h>
 
 #include "genicam_driver/genicam_node_base.h"
 
@@ -146,7 +147,8 @@ int main(int argc, char** argv)
     }
     catch (const std::exception& error)
     {
-        RCLCPP_ERROR(rclcpp::get_logger("camera_finder"), "Camera discovery failed: %s", error.what());
+        RCLCPP_ERROR(rclcpp::get_logger("camera_finder"), "Camera discovery failed: %s",
+                     error.what());
     }
 
     if (rclcpp::ok())
