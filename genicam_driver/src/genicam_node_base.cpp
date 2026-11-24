@@ -29,11 +29,11 @@
 #include "genicam_driver/genicam_node_base.h"
 
 // Std
+#include <arpa/inet.h>
+
 #include <regex>
 #include <string>
 #include <type_traits>
-
-#include <arpa/inet.h>
 
 // genicam_driver
 #include "genicam_driver/error.h"
@@ -135,7 +135,8 @@ void GenicamNodeBase::setupParameters()
         }
         else
         {
-            RCLCPP_INFO(logger_, "Opening: %s%s", guid_.c_str(), use_direct_ip ? " (direct IP)" : "");
+            RCLCPP_INFO(logger_, "Opening: %s%s", guid_.c_str(),
+                        use_direct_ip ? " (direct IP)" : "");
             p_camera_ = arv_camera_new(guid_.c_str(), err.ref());
         }
 
