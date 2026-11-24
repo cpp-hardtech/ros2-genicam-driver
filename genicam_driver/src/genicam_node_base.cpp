@@ -33,6 +33,8 @@
 #include <string>
 #include <type_traits>
 
+#include <arpa/inet.h>
+
 // genicam_driver
 #include "genicam_driver/error.h"
 
@@ -114,14 +116,12 @@ void GenicamNodeBase::setupParameters()
     // Guarded error object
     GuardedGError err;
 
-    //--- Discover available interfaces and devices.
-
-    uint n_devices = listAvailableCameraDevices();
-    if (n_devices == 0)
-        return false;
-
-    //--- connect to camera specified by guid parameter
     guid_ = get_parameter("guid").as_string();
+    in_addr address{};
+    const bool use_direct_ip = inet_pton(AF_INET, guid_.c_str(), &address) == 1;
+    // A known GigE address can be reached without a discovery reply.
+    if (!use_direct_ip && listAvailableCameraDevices() == 0)
+        return false;
 
     const int MAX_RETRIES = 10;
     int tryCount          = 1;
@@ -135,7 +135,7 @@ void GenicamNodeBase::setupParameters()
         }
         else
         {
-            RCLCPP_INFO(logger_, "Opening: %s ", guid_.c_str());
+            RCLCPP_INFO(logger_, "Opening: %s%s", guid_.c_str(), use_direct_ip ? " (direct IP)" : "");
             p_camera_ = arv_camera_new(guid_.c_str(), err.ref());
         }
 
