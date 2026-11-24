@@ -52,6 +52,7 @@ extern "C"
 #include <rcl_interfaces/msg/set_parameters_result.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/service.hpp>
+#include <std_srvs/srv/trigger.hpp>
 
 // genicam_driver
 #include "genicam_driver/genicam_node_base.h"
@@ -546,6 +547,7 @@ class CameraDriver : public GenicamNodeBase
     /// Service to calculate white balance
     rclcpp::Service<genicam_driver_msgs::srv::CalculateWhiteBalance>::SharedPtr
       p_white_balance_srv_;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr p_trigger_srv_;
 
     /// Callback handle to adjust parameters
     OnSetParametersCallbackHandle::SharedPtr p_parameter_callback_handle_;
@@ -565,8 +567,8 @@ class CameraDriver : public GenicamNodeBase
     /// Pointer to publisher for camera diagnostics.
     rclcpp::Publisher<genicam_driver_msgs::msg::CameraDiagnostics>::SharedPtr p_diagnostic_pub_;
 
-    /// Number of subscribers currently connected to the message topic.
-    int current_num_subscribers_;
+    /// Whether the camera accepted the most recent acquisition start command.
+    bool is_acquiring_;
 
     /// Mutex guarding the initialization flag and the acquisition state.
     std::mutex acquisition_mutex_;

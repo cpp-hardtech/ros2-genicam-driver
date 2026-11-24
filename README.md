@@ -105,6 +105,7 @@ transports:
 | Service | Type | Notes |
 | --- | --- | --- |
 | `~/calculate_white_balance_once` | `genicam_driver_msgs/srv/CalculateWhiteBalance` | Runs a one-shot white balance calculation on the device. |
+| `~/trigger` | `std_srvs/srv/Trigger` | Requests a software trigger when `software_trigger` is enabled and acquisition is active. |
 
 ## Parameters
 
@@ -119,6 +120,8 @@ transports:
 | `diagnostic_publishing_rate` | double | `0.1` | Diagnostics publish rate in Hz. |
 | `verbose` | bool | `false` | Enables additional logging from the driver. |
 | `timestamp_offset` | double | `0.0` | Constant offset applied to image timestamps. |
+| `acquisition_always_on` | bool | `false` | Starts acquisition even without subscribers. ROS releases with publisher match events otherwise start and stop acquisition with subscriber demand. |
+| `software_trigger` | bool | `false` | Configures software-triggered acquisition on a camera that supports it. |
 | `xml_file` | string | `""` | Output path, `camera_xml_exporter` only. |
 
 ## Configuration files
@@ -142,6 +145,19 @@ Set `stream_names` to one name per stream. The names form the topic namespace, s
 `stream_names: ["left", "right"]` publishes `<node>/left/image_raw` and
 `<node>/right/image_raw`. Leave the parameter empty to keep the topics directly under the
 node name.
+
+`CameraInfo` publishes the configured binning and the captured region in full-resolution
+sensor coordinates. Calibrated dimensions continue to describe the calibration image.
+
+## Software triggering
+
+Start the driver with `-p software_trigger:=true`, subscribe to the image stream, then request a
+capture. Set `-p acquisition_always_on:=true` if the caller needs to trigger the camera without
+a connected image or camera info subscriber.
+
+```bash
+ros2 service call /camera_driver_gv/trigger std_srvs/srv/Trigger '{}'
+```
 
 ## Contributing
 
