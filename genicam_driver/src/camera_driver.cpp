@@ -1481,8 +1481,21 @@ void CameraDriver::setupCameraDiagnosticPublisher()
 }
 
 //==================================================================================================
+void CameraDriver::stopCameraDiagnosticPublisher()
+{
+    {
+        std::lock_guard<std::mutex> lock(diagnostic_wait_mutex_);
+        is_diagnostics_published_ = false;
+    }
+    diagnostic_wait_cv_.notify_one();
+    if (diagnostic_thread_.joinable())
+        diagnostic_thread_.join();
+}
+
+//==================================================================================================
 void CameraDriver::publishCameraDiagnosticsLoop(double rate) const
 {
+    const auto period = std::chrono::nanoseconds(static_cast<int64_t>(1e9 / rate));
     genicam_driver_msgs::msg::CameraDiagnostics cam_diagnostic_msg;
     cam_diagnostic_msg.header.frame_id = this->get_name();
 
@@ -1661,7 +1674,8 @@ void CameraDriver::publishCameraDiagnosticsLoop(double rate) const
 
         p_diagnostic_pub_->publish(cam_diagnostic_msg);
 
-        rclcpp::sleep_for(std::chrono::nanoseconds(static_cast<int64_t>(std::pow(10, 9) / rate)));
+        std::unique_lock<std::mutex> lock(diagnostic_wait_mutex_);
+        diagnostic_wait_cv_.wait_for(lock, period, [this] { return !is_diagnostics_published_; });
     }
 }
 
