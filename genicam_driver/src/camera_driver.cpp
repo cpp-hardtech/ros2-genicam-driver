@@ -2008,7 +2008,8 @@ sensor_msgs::msg::CameraInfo CameraDriver::makeCameraInfoMsg(
     if (info.width == 0)
         info.width = stream.sensor.width > 0 ? static_cast<uint32_t>(stream.sensor.width) : width;
     if (info.height == 0)
-        info.height = stream.sensor.height > 0 ? static_cast<uint32_t>(stream.sensor.height) : height;
+        info.height = stream.sensor.height > 0 ?
+          static_cast<uint32_t>(stream.sensor.height) : height;
 
     info.roi = sensor_msgs::msg::RegionOfInterest();
     if (x != 0 || y != 0 || width != info.width || height != info.height)
