@@ -120,6 +120,7 @@ transports:
 | `verbose` | bool | `false` | Enables additional logging from the driver. |
 | `timestamp_offset` | double | `0.0` | Constant offset applied to image timestamps. |
 | `xml_file` | string | `""` | Output path, `camera_xml_exporter` only. |
+| `output_to_stdout` | bool | `false` | Write XML to standard output, `camera_xml_exporter` only. Leave `xml_file` empty in this mode. |
 
 ## Configuration files
 
@@ -134,6 +135,13 @@ Feature names and accepted values are defined by the device and can be listed wi
 ```bash
 ros2 run genicam_driver camera_xml_exporter --ros-args \
   -p "guid:=<device-identifier>" -p "xml_file:=$PWD/camera.xml"
+```
+
+For use in a pipeline, set `output_to_stdout` to `true` and leave `xml_file` empty.
+
+```bash
+ros2 run genicam_driver camera_xml_exporter --ros-args \
+  -p "guid:=<device-identifier>" -p output_to_stdout:=true > camera.xml
 ```
 
 ## Multi-stream nodes

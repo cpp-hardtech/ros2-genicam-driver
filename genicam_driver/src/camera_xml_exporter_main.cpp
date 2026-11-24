@@ -42,7 +42,11 @@ int main(int argc, char** argv)
         rclcpp::init(argc, argv);
         auto p_node = std::make_shared<genicam_driver::CameraXmlExporter>();
         if (p_node->isInitialized())
-            is_successful = p_node->exportXmlDataToFile();
+        {
+            const bool use_stdout = p_node->get_parameter("output_to_stdout").as_bool();
+            is_successful = use_stdout ? p_node->exportXmlDataToStdout()
+                                       : p_node->exportXmlDataToFile();
+        }
     }
     catch (const std::exception& error)
     {
