@@ -64,6 +64,15 @@ ros2 run genicam_driver camera_finder
 The finder prints a device identifier for each camera. Use that value as `guid` below. For
 GigE Vision cameras the device IP address is also accepted.
 
+Set `transport` to `GigEVision` or `USB3Vision` to probe a single transport. The default
+`all` discovers cameras on all enabled transports. For scripts, set `output_format` to
+`yaml` to write a YAML sequence to standard output, with the device ID, address, vendor,
+model, serial number, and protocol for each camera. An empty discovery writes `[]`.
+
+```bash
+ros2 run genicam_driver camera_finder --ros-args -p transport:=GigEVision -p output_format:=yaml
+```
+
 ### 2. Start the driver
 
 ```bash

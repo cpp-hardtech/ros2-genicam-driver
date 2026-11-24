@@ -112,7 +112,7 @@ rclcpp_components_register_nodes(${LIBRARY_NAME} "genicam_driver::CameraDriverUv
 set(CAMERA_FINDER_EXEC_NAME camera_finder)
 add_executable(${CAMERA_FINDER_EXEC_NAME} src/camera_finder_main.cpp)
 target_compile_definitions(${CAMERA_FINDER_EXEC_NAME} PRIVATE ${COMMON_COMPILE_DEFINITIONS})
-target_link_libraries(${CAMERA_FINDER_EXEC_NAME} ${LIBRARY_NAME})
+target_link_libraries(${CAMERA_FINDER_EXEC_NAME} ${LIBRARY_NAME} ${YAML_CPP_LIBRARIES})
 
 # camera_xml_exporter node
 
