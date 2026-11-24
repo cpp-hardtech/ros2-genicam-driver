@@ -32,6 +32,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <system_error>
 #include <thread>
 
 // genicam_driver
@@ -90,29 +91,61 @@ CameraXmlExporter::~CameraXmlExporter()
         xml_file_path_ = std::filesystem::path(xml_file_str);
     }
 
-    //--- make path absolute
-    xml_file_path_ = std::filesystem::absolute(xml_file_path_);
-
-    //--- print warning if file already exists
-    if (std::filesystem::exists(xml_file_path_))
-        RCLCPP_WARN(logger_,
-                    "Output file already exists and will be overwritten. Path: %s",
-                    std::filesystem::canonical(xml_file_path_).c_str());
-
-    //--- make parent directory if not existing
-    if (!xml_file_path_.parent_path().empty())
-        std::filesystem::create_directories(xml_file_path_.parent_path());
-
-    //--- extract and save XML
+    //--- extract XML before opening the output file
     size_t xml_size        = 0;
     const char* p_xml_data = arv_device_get_genicam_xml(p_device_, &xml_size);
-    std::ofstream fout;
-    fout.open(xml_file_path_.c_str(), std::ios::binary | std::ios::out);
+    if (p_xml_data == nullptr || xml_size == 0)
+    {
+        RCLCPP_ERROR(logger_, "Camera did not provide GenICam XML.");
+        return false;
+    }
+
+    std::error_code path_error;
+    const auto absolute_path = std::filesystem::absolute(xml_file_path_, path_error);
+    if (path_error)
+    {
+        RCLCPP_ERROR(logger_, "Failed to resolve XML output path '%s': %s",
+                     xml_file_path_.c_str(), path_error.message().c_str());
+        return false;
+    }
+    xml_file_path_ = absolute_path;
+
+    const auto parent_path = xml_file_path_.parent_path();
+    std::filesystem::create_directories(parent_path, path_error);
+    if (path_error)
+    {
+        RCLCPP_ERROR(logger_, "Failed to create XML output directory '%s': %s",
+                     parent_path.c_str(), path_error.message().c_str());
+        return false;
+    }
+
+    const bool output_exists = std::filesystem::exists(xml_file_path_, path_error);
+    if (path_error)
+    {
+        RCLCPP_ERROR(logger_, "Failed to inspect XML output file '%s': %s",
+                     xml_file_path_.c_str(), path_error.message().c_str());
+        return false;
+    }
+
+    std::ofstream fout(xml_file_path_, std::ios::binary);
+    if (!fout)
+    {
+        RCLCPP_ERROR(logger_, "Failed to open XML output file '%s'.", xml_file_path_.c_str());
+        return false;
+    }
+    if (output_exists)
+        RCLCPP_WARN(logger_, "Output file already exists and will be overwritten. Path: %s",
+                    xml_file_path_.c_str());
+
     fout.write(p_xml_data, xml_size);
     fout.close();
+    if (!fout)
+    {
+        RCLCPP_ERROR(logger_, "Failed to write GenICam XML to file '%s'.", xml_file_path_.c_str());
+        return false;
+    }
 
-    RCLCPP_INFO(logger_, "Written GenICam XML to file: %s",
-                std::filesystem::canonical(xml_file_path_).c_str());
+    RCLCPP_INFO(logger_, "Written GenICam XML to file: %s", xml_file_path_.c_str());
 
     return true;
 }
