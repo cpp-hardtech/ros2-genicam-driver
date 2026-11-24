@@ -52,5 +52,5 @@ int main(int argc, char** argv)
 
     rclcpp::shutdown();
 
-    return is_successful ? EXIT_SUCCESS : EXIT_FAILURE;
+    return is_successful && !p_node->hasLostCameraControl() ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -70,6 +70,12 @@ bool GenicamNodeBase::isInitialized() const
 }
 
 //==================================================================================================
+bool GenicamNodeBase::hasLostCameraControl() const
+{
+    return camera_control_lost_.load();
+}
+
+//==================================================================================================
 uint GenicamNodeBase::listAvailableCameraDevices() const
 {
     //--- Discover available interfaces and devices.
@@ -717,6 +723,7 @@ void GenicamNodeBase::handleControlLostSignal(ArvDevice* p_device, gpointer p_us
     if (!p_ca_instance)
         return;
 
+    p_ca_instance->camera_control_lost_.store(true);
     RCLCPP_FATAL(p_ca_instance->logger_, "Control to aravis device lost.");
     RCLCPP_FATAL(p_ca_instance->logger_, "  GUID: %s", p_ca_instance->guid_.c_str());
 

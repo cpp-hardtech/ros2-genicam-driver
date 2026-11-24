@@ -30,6 +30,7 @@
 #define GENICAM_DRIVER__GENICAM_NODE_BASE_H_
 
 // Std
+#include <atomic>
 #include <cassert>
 #include <map>
 #include <string>
@@ -84,6 +85,11 @@ class GenicamNodeBase : public rclcpp::Node
      * @brief Returns true, if node is is initialized. False, otherwise.
      */
     bool isInitialized() const;
+
+    /**
+     * @brief Returns true if Aravis reported loss of device control.
+     */
+    bool hasLostCameraControl() const;
 
     /**
      * @brief List available camera devices.
@@ -339,6 +345,9 @@ class GenicamNodeBase : public rclcpp::Node
 
     /// Flag indicating verbose output.
     bool is_verbose_enable_;
+
+  private:
+    std::atomic<bool> camera_control_lost_{false};
 };
 
 }  // namespace genicam_driver
