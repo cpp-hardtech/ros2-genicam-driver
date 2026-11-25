@@ -26,6 +26,8 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <exception>
+
 // ROS
 #include <rclcpp/rclcpp.hpp>
 
@@ -34,15 +36,22 @@
 
 int main(int argc, char** argv)
 {
-    rclcpp::init(argc, argv);
-
-    auto p_node = std::make_shared<genicam_driver::CameraXmlExporter>();
-
     bool is_successful = false;
-    if (p_node && p_node->isInitialized())
-        is_successful = p_node->exportXmlDataToFile();
+    try
+    {
+        rclcpp::init(argc, argv);
+        auto p_node = std::make_shared<genicam_driver::CameraXmlExporter>();
+        if (p_node->isInitialized())
+            is_successful = p_node->exportXmlDataToFile();
+    }
+    catch (const std::exception& error)
+    {
+        RCLCPP_ERROR(rclcpp::get_logger("camera_xml_exporter"), "Failed to export GenICam XML: %s",
+                     error.what());
+    }
 
-    rclcpp::shutdown();
+    if (rclcpp::ok())
+        rclcpp::shutdown();
 
     return is_successful ? EXIT_SUCCESS : EXIT_FAILURE;
 }
