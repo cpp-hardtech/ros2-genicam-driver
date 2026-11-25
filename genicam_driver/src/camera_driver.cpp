@@ -930,6 +930,18 @@ void CameraDriver::filterParameterListNames(
 {
     GuardedGError err;
 
+    const auto selectChannel = [this](const char* selector, const std::string& channel)
+    {
+        if (!arv_device_is_feature_available(p_device_, selector, nullptr))
+            return true;
+
+        std::string current;
+        if (getFeatureValue<std::string>(selector, current) && current == channel)
+            return true;
+
+        return setFeatureValue<std::string>(selector, channel);
+    };
+
     for (uint i = 0; i < streams_.size(); ++i)
     {
         Stream& stream             = streams_[i];
@@ -1007,7 +1019,8 @@ void CameraDriver::filterParameterListNames(
                 for (auto itr = tmp_param_values.begin(); itr != tmp_param_values.end(); ++itr)
                 {
                     //--- set selector
-                    setFeatureValue<std::string>("GainSelector", itr->first);
+                    if (!selectChannel("GainSelector", itr->first))
+                        continue;
 
                     //--- set bounded feature
                     setBoundedFeatureValueFromParameter<double>(tmp_feature_name.c_str(),
@@ -1052,7 +1065,8 @@ void CameraDriver::filterParameterListNames(
                 for (auto itr = tmp_param_values.begin(); itr != tmp_param_values.end(); ++itr)
                 {
                     //--- set selector
-                    setFeatureValue<std::string>("BlackLevelSelector", itr->first);
+                    if (!selectChannel("BlackLevelSelector", itr->first))
+                        continue;
 
                     //--- set bounded feature
                     setBoundedFeatureValueFromParameter<double>(tmp_feature_name.c_str(),
@@ -1099,7 +1113,8 @@ void CameraDriver::filterParameterListNames(
                 for (auto itr = tmp_param_values.begin(); itr != tmp_param_values.end(); ++itr)
                 {
                     //--- set selector
-                    setFeatureValue<std::string>("BalanceRatioSelector", itr->first);
+                    if (!selectChannel("BalanceRatioSelector", itr->first))
+                        continue;
 
                     //--- set bounded feature
                     setBoundedFeatureValueFromParameter<double>(tmp_feature_name.c_str(),
@@ -2223,37 +2238,60 @@ void CameraDriver::onCalculateWhiteBalanceOnceTriggered(
     //--- check for correct state of node
     if (!p_device_ || !this->is_initialized_)
         return;
-    //--- set white balance mode to 'once' and get calculated values if successful
-    if (setFeatureValue<std::string>("BalanceWhiteAuto", "Once"))
-    {
-        res->is_successful = true;
-        RCLCPP_INFO(logger_, "Calculating white balance successful!");
-        GuardedGError err;
-        uint nRatioSelectorVals        = 0;
-        const char** ratioSelectorVals = arv_camera_dup_available_enumerations_as_strings(
-          this->p_camera_, "BalanceRatioSelector", &nRatioSelectorVals, err.ref());
-        CHECK_GERROR_MSG(err, logger_,
-                         "In getting values for feature 'BalanceRatioSelector'.");
-        for (uint i = 0; i < nRatioSelectorVals; ++i)
-        {
-            diagnostic_msgs::msg::KeyValue kv_pair;
-            kv_pair.key = std::string(ratioSelectorVals[i]);
-            setFeatureValue<std::string>("BalanceRatioSelector", kv_pair.key);
-            float ratioVal = 1.0;
-            getFeatureValue<float>("BalanceRatio", ratioVal);
-            kv_pair.value = std::to_string(ratioVal);
-            res->balance_ratios.push_back(kv_pair);
-            RCLCPP_INFO(logger_, "  BalanceRatio '%s':\t%s",
-                        kv_pair.key.c_str(), kv_pair.value.c_str());
-        }
-        return;
-    }
-    else
+    if (!setFeatureValue<std::string>("BalanceWhiteAuto", "Once"))
     {
         RCLCPP_ERROR(logger_, "Trying to calculate white balance and setting auto mode to "
                               "'Once' failed!");
         return;
     }
+
+    GuardedGError err;
+    guint ratio_count = 0;
+    std::unique_ptr<const char*, decltype(&g_free)> selectors(
+      arv_camera_dup_available_enumerations_as_strings(
+        p_camera_, "BalanceRatioSelector", &ratio_count, err.ref()), &g_free);
+    if (err)
+    {
+        CHECK_GERROR_MSG(err, logger_, "In getting values for feature 'BalanceRatioSelector'.");
+        return;
+    }
+
+    std::string original_selector;
+    if (!selectors || ratio_count == 0 ||
+        !getFeatureValue<std::string>("BalanceRatioSelector", original_selector))
+    {
+        RCLCPP_WARN(logger_, "White balance ratio selectors are unavailable.");
+        return;
+    }
+
+    std::vector<diagnostic_msgs::msg::KeyValue> ratios;
+    std::string current_selector = original_selector;
+    for (guint i = 0; i < ratio_count; ++i)
+    {
+        diagnostic_msgs::msg::KeyValue ratio;
+        ratio.key = selectors.get()[i];
+        if (ratio.key != current_selector &&
+            !setFeatureValue<std::string>("BalanceRatioSelector", ratio.key))
+            break;
+        current_selector = ratio.key;
+
+        double value;
+        if (!getFeatureValue<double>("BalanceRatio", value))
+        {
+            RCLCPP_WARN(logger_, "Could not read white balance ratio '%s'.", ratio.key.c_str());
+            break;
+        }
+        ratio.value = std::to_string(value);
+        ratios.push_back(std::move(ratio));
+    }
+
+    const bool selector_restored = current_selector == original_selector ||
+      setFeatureValue<std::string>("BalanceRatioSelector", original_selector);
+    if (!selector_restored || ratios.size() != ratio_count)
+        return;
+
+    res->balance_ratios = std::move(ratios);
+    res->is_successful = true;
 }
 
 //==================================================================================================
