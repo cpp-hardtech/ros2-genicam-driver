@@ -28,6 +28,11 @@
 
 #include "genicam_driver/camera_driver.h"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <optional>
+
 // ROS
 #include <image_transport/camera_common.hpp>
 #include <rcl_interfaces/msg/floating_point_range.hpp>
@@ -43,6 +48,17 @@ static const char* ARV_BUFFER_STATUS_FROM_INT[] =
 
 namespace genicam_driver
 {
+
+namespace
+{
+constexpr auto MAX_STAMP_SECONDS = std::numeric_limits<int32_t>::max();
+constexpr int64_t MAX_STAMP_NS = (int64_t{MAX_STAMP_SECONDS} + 1) * 1000000000 - 1;
+
+bool isTimestampOffsetValid(double offset)
+{
+    return std::isfinite(offset) && std::abs(offset) <= MAX_STAMP_SECONDS;
+}
+}
 
 //==================================================================================================
 CameraDriver::CameraDriver(const std::string& name, const rclcpp::NodeOptions& options) :
@@ -143,7 +159,6 @@ void CameraDriver::setupParameters()
     timestamp_offset_desc.description =
       "Offset in seconds added to the timestamp of the published image messages.";
     declare_parameter<double>("timestamp_offset", 0.0, timestamp_offset_desc);
-    timestamp_offset_ = get_parameter("timestamp_offset").as_double();
 
     //--- register parameter change callback
     p_parameter_callback_handle_ = add_on_set_parameters_callback(
@@ -153,6 +168,15 @@ void CameraDriver::setupParameters()
 //==================================================================================================
 bool CameraDriver::setupCameraStreamStructs()
 {
+    const auto timestamp_offset = get_parameter("timestamp_offset").as_double();
+    if (!isTimestampOffsetValid(timestamp_offset))
+    {
+        RCLCPP_ERROR(logger_, "timestamp_offset must be finite and within +/- %d seconds.",
+                     MAX_STAMP_SECONDS);
+        return false;
+    }
+    timestamp_offset_ = timestamp_offset;
+
     //--- get number of streams and associated names
 
     int num_streams = discoverNumberOfStreams();
@@ -161,10 +185,8 @@ bool CameraDriver::setupCameraStreamStructs()
     auto camera_info_urls = get_parameter("camera_info_urls").as_string_array();
     auto base_frame_id    = get_parameter("frame_id").as_string();
 
-    bool is_camera_info_url_param_empty = camera_info_urls.empty();
-
     //--- check if one camera_info_url is specified
-    if (is_camera_info_url_param_empty)
+    if (camera_info_urls.empty())
     {
         RCLCPP_WARN(logger_, "No camera_info_url specified. Initializing from camera GUID.");
 
@@ -222,7 +244,8 @@ bool CameraDriver::setupCameraStreamStructs()
                                    : base_frame_id;
 
         //--- get camera_info url
-        if (is_camera_info_url_param_empty)
+        const bool use_default_url = camera_info_urls[i].empty();
+        if (use_default_url)
         {
             if (streams_.size() > 1)
                 stream.camera_info_url = "file://" + GUID_STR + "_" + stream.name + ".yaml";
@@ -236,8 +259,8 @@ bool CameraDriver::setupCameraStreamStructs()
         {
             stream.camera_info_url = camera_info_urls[i];
 
-            //--- add 'file://' to beginning of camera_info_url
-            if (stream.camera_info_url.find("file://") != 0)
+            //--- accept bare filesystem paths and URLs supported by CameraInfoManager.
+            if (stream.camera_info_url.find("://") == std::string::npos)
                 stream.camera_info_url = "file://" + stream.camera_info_url;
         }
 
@@ -270,9 +293,13 @@ bool CameraDriver::setupCameraStreamStructs()
         // Multi-source Camera. Uncertain if this is still relevant.
         stream.p_camera_info_manager.reset(
           new camera_info_manager::CameraInfoManager(this, stream.sensor.frame_id));
-        bool is_successful = stream.p_camera_info_manager->loadCameraInfo(stream.camera_info_url);
-        if (!is_successful)
-            return false;
+        if (!stream.p_camera_info_manager->loadCameraInfo(stream.camera_info_url))
+        {
+            if (!use_default_url)
+                return false;
+            RCLCPP_WARN(logger_, "No default calibration for stream '%s'. "
+                                 "Publishing uncalibrated images.", stream.name.c_str());
+        }
     }
 
     //--- check if at least one stream was initialized
@@ -749,12 +776,12 @@ void CameraDriver::filterParameterListNames(
             is_parameter_set = getAcquisitionControlParameter(tmp_feature_name, tmp_param_value);
             if (is_parameter_set)
                 setFeatureValueFromParameter<int64_t>(tmp_feature_name, tmp_param_value, i);
+            getFeatureValue<int>(tmp_feature_name, acq_ctrl.frame_count);
+            if (is_parameter_set &&
+                !isParameterValueEqualTo<int64_t>(tmp_param_value, acq_ctrl.frame_count, i))
+                config_warn_msgs_.push_back("Stream " + std::to_string(i) + ": " +
+                                            "'" + tmp_feature_name + "' is not as specified.");
         }
-        getFeatureValue<int>(tmp_feature_name, acq_ctrl.frame_count);
-        if (is_parameter_set &&
-            !isParameterValueEqualTo<int64_t>(tmp_param_value, acq_ctrl.frame_count, i))
-            config_warn_msgs_.push_back("Stream " + std::to_string(i) + ": " +
-                                        "'" + tmp_feature_name + "' is not as specified.");
 
         //--- Exposure Mode
         tmp_feature_name = "ExposureMode";
@@ -803,13 +830,18 @@ void CameraDriver::filterParameterListNames(
         RCLCPP_DEBUG(logger_, "Evaluating 'AcquisitionControl.%s' for stream %i.",
                      tmp_feature_name.c_str(), i);
         is_parameter_set = getAcquisitionControlParameter(tmp_feature_name, tmp_param_value);
+        const char* exposure_time_feature = "ExposureTime";
+        if (!arv_device_is_feature_available(p_device_, exposure_time_feature, nullptr) &&
+            arv_device_is_feature_available(p_device_, "ExposureTimeAbs", nullptr))
+            exposure_time_feature = "ExposureTimeAbs";
+
         if (arv_auto_from_string(acq_ctrl.exposure_auto.c_str()) ==
               ARV_AUTO_OFF &&
             arv_exposure_mode_from_string(acq_ctrl.exposure_mode.c_str()) ==
               ARV_EXPOSURE_MODE_TIMED &&
             is_parameter_set)
-            setFeatureValueFromParameter<double>(tmp_feature_name, tmp_param_value, i);
-        getFeatureValue<double>(tmp_feature_name, acq_ctrl.exposure_time);
+            setFeatureValueFromParameter<double>(exposure_time_feature, tmp_param_value, i);
+        getFeatureValue<double>(exposure_time_feature, acq_ctrl.exposure_time);
         if (is_parameter_set &&
             !isParameterValueEqualTo<double>(tmp_param_value, acq_ctrl.exposure_time, i))
             config_warn_msgs_.push_back("Stream " + std::to_string(i) + ": " +
@@ -1113,6 +1145,7 @@ bool CameraDriver::initializeServices()
         "~/calculate_white_balance_once",
         std::bind(&CameraDriver::onCalculateWhiteBalanceOnceTriggered, this,
                   std::placeholders::_1, std::placeholders::_2));
+
     return true;
 }
 
@@ -1371,21 +1404,35 @@ rcl_interfaces::msg::SetParametersResult CameraDriver::handleDynamicParameterCha
     rcl_interfaces::msg::SetParametersResult retVal;
     retVal.successful = true;
 
+    std::optional<double> timestamp_offset;
+    for (const auto& param : iParameters)
+    {
+        if (param.get_name() != "timestamp_offset")
+            continue;
+
+        if (param.get_type() != rclcpp::PARAMETER_DOUBLE ||
+            !isTimestampOffsetValid(param.as_double()))
+        {
+            retVal.successful = false;
+            retVal.reason = "timestamp_offset must be a finite double within +/- " +
+              std::to_string(MAX_STAMP_SECONDS) + " seconds.";
+            return retVal;
+        }
+        timestamp_offset = param.as_double();
+    }
+
     //-- loop through all parameters and set information accordingly
     for (rclcpp::Parameter param : iParameters)
     {
         // parameter name (i.e. feature name)
         std::string param_name = param.get_name();
+        if (param_name == "timestamp_offset")
+            continue;
 
         //--- verbose
         if (param_name == "verbose")
         {
             is_verbose_enable_ = param.as_bool();
-        }
-        //--- timestamp offset
-        else if (param_name == "timestamp_offset")
-        {
-            timestamp_offset_ = param.as_double();
         }
         //--- dynamic camera parameters, check if parameter name is in list of specified dynamic
         //--- parameters
@@ -1422,6 +1469,9 @@ rcl_interfaces::msg::SetParametersResult CameraDriver::handleDynamicParameterCha
             }
         }
     }
+
+    if (retVal.successful && timestamp_offset)
+        timestamp_offset_ = *timestamp_offset;
 
     return retVal;
 }
@@ -1805,7 +1855,7 @@ void CameraDriver::processStreamBuffer(const uint stream_id)
                         "Image region specified for stream %i (%s) doesn't match received. "
                         "Setting region to: x=%i y=%i width= %i height=%i.",
                         stream_id, stream.name.c_str(),
-                        stream.image_roi.x, stream.image_roi.x,
+                        stream.image_roi.x, stream.image_roi.y,
                         stream.image_roi.width, stream.image_roi.height);
         }
 
@@ -1821,12 +1871,9 @@ void CameraDriver::processStreamBuffer(const uint stream_id)
             p_img_msg = p_cvt_img_msg;
         }
 
-        //--- fill camera_info message
-        fillCameraInfoMsg(stream, p_img_msg);
-
         //--- publish
         stream.image_pub.publish(*p_img_msg);
-        stream.p_camera_info_pub->publish(*stream.p_cam_info_msg);
+        stream.p_camera_info_pub->publish(makeCameraInfoMsg(stream, *p_img_msg));
 
         //--- do post frame processing
         postFrameProcessingCallback(stream_id);
@@ -1865,33 +1912,28 @@ void CameraDriver::fillImageMsgMetadata(sensor_msgs::msg::Image::SharedPtr& p_im
 
     //--- fill header data
 
-    //--- set ptp timestamp if available
-    bool isBufferTimestampSet = false;
-    if (arv_camera_is_gv_device(p_camera_))
+    const auto host_timestamp = arv_buffer_get_system_timestamp(p_buffer);
+    auto timestamp = p_gv_tl_control && p_gv_tl_control->is_ptp_enable ?
+      arv_buffer_get_timestamp(p_buffer) : host_timestamp;
+    if (timestamp > static_cast<uint64_t>(MAX_STAMP_NS))
     {
-        if (p_gv_tl_control)
-        {
-            if (p_gv_tl_control->is_ptp_enable)
-            {
-                p_img_msg->header.stamp = rclcpp::Time(arv_buffer_get_timestamp(p_buffer));
-                isBufferTimestampSet    = true;
-            }
-        }
-        else
-        {
-            RCLCPP_WARN(logger_, "%s: Something went wrong when trying to cast pointer of type "
-                                 "GenTransportLayerControl to GevTransportLayerControl. "
-                                 "Using system timestamp.",
-                        __PRETTY_FUNCTION__);
-        }
+        RCLCPP_WARN_ONCE(logger_, "Camera timestamp is outside the ROS range. "
+                                 "Using the host timestamp if representable.");
+        timestamp = host_timestamp;
     }
-
-    if (!isBufferTimestampSet)
-        p_img_msg->header.stamp = rclcpp::Time(arv_buffer_get_system_timestamp(p_buffer));
-
-    //--- apply timestamp offset
-    p_img_msg->header.stamp = rclcpp::Time(p_img_msg->header.stamp) +
-                              rclcpp::Duration::from_seconds(timestamp_offset_);
+    if (timestamp > static_cast<uint64_t>(MAX_STAMP_NS))
+        timestamp = 0;
+    else
+    {
+        const auto offset = rclcpp::Duration::from_seconds(timestamp_offset_.load()).nanoseconds();
+        const auto adjusted = static_cast<int64_t>(timestamp) + offset;
+        if (adjusted < 0 || adjusted > MAX_STAMP_NS)
+            RCLCPP_WARN_ONCE(logger_, "timestamp_offset produces a timestamp outside the ROS "
+                                     "range. Publishing the original timestamp.");
+        else
+            timestamp = static_cast<uint64_t>(adjusted);
+    }
+    p_img_msg->header.stamp = rclcpp::Time(static_cast<int64_t>(timestamp));
     p_img_msg->header.frame_id = sensor.frame_id;
 
     //--- fill image meta data
@@ -1902,39 +1944,16 @@ void CameraDriver::fillImageMsgMetadata(sensor_msgs::msg::Image::SharedPtr& p_im
 }
 
 //==================================================================================================
-void CameraDriver::fillCameraInfoMsg(Stream& stream,
-                                     const sensor_msgs::msg::Image::SharedPtr& p_img_msg) const
+sensor_msgs::msg::CameraInfo CameraDriver::makeCameraInfoMsg(
+  const Stream& stream, const sensor_msgs::msg::Image& image) const
 {
-    //--- reset pointer to camera_info message, if not already set
-    if (!stream.p_cam_info_msg)
-    {
-        stream.p_cam_info_msg.reset(new sensor_msgs::msg::CameraInfo());
-
-        //--- fill camera data only once
-        (*stream.p_cam_info_msg) = stream.p_camera_info_manager->getCameraInfo();
-    }
-
-    //--- fill header data each time an image gets published
-    stream.p_cam_info_msg->header = p_img_msg->header;
-
-    //--- check if image size given in camera info corresponds to actual image size.
-    if (stream.p_camera_info_manager->isCalibrated() &&
-        (stream.p_cam_info_msg->width != p_img_msg->width ||
-         stream.p_cam_info_msg->height != p_img_msg->height))
-    {
-        RCLCPP_WARN_ONCE(
-          logger_,
-          "The fields image_width and image_height (%ix%i) in the YAML specified by "
-          "'camera_info_url' parameter seams to be inconsistent with the actual "
-          "image size (%ix%i). Please set them there, because actual image size and specified "
-          "image size can be different due to the region of interest (ROI) feature. In the YAML "
-          "the image size should be the one on which the camera was calibrated. "
-          "See CameraInfo.msg specification!",
-          stream.p_cam_info_msg->width, stream.p_cam_info_msg->height,
-          p_img_msg->width, p_img_msg->height);
-        stream.p_cam_info_msg->width  = p_img_msg->width;
-        stream.p_cam_info_msg->height = p_img_msg->height;
-    }
+    auto info = stream.p_camera_info_manager->getCameraInfo();
+    info.header = image.header;
+    if (info.width == 0)
+        info.width = image.width;
+    if (info.height == 0)
+        info.height = image.height;
+    return info;
 }
 
 //==================================================================================================

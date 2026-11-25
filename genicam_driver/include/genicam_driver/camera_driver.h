@@ -90,7 +90,6 @@ class CameraDriver : public GenicamNodeBase
           image_roi(ImageRoi()),
           camera_info_url(""),
           p_camera_info_manager(nullptr),
-          p_cam_info_msg(nullptr),
           is_buffer_processed(false)
         {
         }
@@ -130,9 +129,6 @@ class CameraDriver : public GenicamNodeBase
 
         /// Unique pointer to camera info manager.
         std::unique_ptr<camera_info_manager::CameraInfoManager> p_camera_info_manager;
-
-        /// Pointer to camera_info message.
-        sensor_msgs::msg::CameraInfo::SharedPtr p_cam_info_msg;
 
         /// Flag controlling processing of buffer data.
         bool is_buffer_processed;
@@ -477,13 +473,13 @@ class CameraDriver : public GenicamNodeBase
                               const ImageRoi& img_roi) const;
 
     /**
-     * @brief Fill camera_info message.
+     * @brief Read current calibration and attach capture metadata.
      *
-     * @param[in,out] stream Stream object which holds camera_info message and other data.
-     * @param[in] p_img_msg Pointer to corresponding image message.
+     * @param[in] stream Stream object holding calibration and capture settings.
+     * @param[in] image Corresponding image message.
      */
-    void fillCameraInfoMsg(CameraDriver::Stream& stream,
-                           const sensor_msgs::msg::Image::SharedPtr& p_img_msg) const;
+    sensor_msgs::msg::CameraInfo makeCameraInfoMsg(
+      const Stream& stream, const sensor_msgs::msg::Image& image) const;
 
     /**
      * @brief Pure virtual callback method to inject short processing routines after the
@@ -558,7 +554,7 @@ class CameraDriver : public GenicamNodeBase
     std::vector<std::string> dynamic_parameters_names_;
 
     /// Offset in seconds added to the timestamp of the published image messages.
-    double timestamp_offset_;
+    std::atomic<double> timestamp_offset_;
 
     /// Atomic flag, indicating if diagnostics are published.
     std::atomic<bool> is_diagnostics_published_;
