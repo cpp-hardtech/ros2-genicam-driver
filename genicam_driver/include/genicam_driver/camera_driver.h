@@ -33,6 +33,7 @@
 #include <yaml-cpp/yaml.h>
 
 // Std
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -431,6 +432,9 @@ class CameraDriver : public GenicamNodeBase
      */
     void setupCameraDiagnosticPublisher();
 
+    /// Stop and join the diagnostic thread.
+    void stopCameraDiagnosticPublisher();
+
     /**
      * Read and publish camera diagnostics.
      *
@@ -560,6 +564,9 @@ class CameraDriver : public GenicamNodeBase
 
     /// Atomic flag, indicating if diagnostics are published.
     std::atomic<bool> is_diagnostics_published_;
+
+    mutable std::mutex diagnostic_wait_mutex_;
+    mutable std::condition_variable diagnostic_wait_cv_;
 
     /// Thread in which the publishing of the camera diagnostics runs.
     std::thread diagnostic_thread_;

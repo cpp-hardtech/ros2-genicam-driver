@@ -125,11 +125,7 @@ CameraDriverUv::~CameraDriverUv()
         spawn_stream_thread_.join();
 
     //--- join diagnostic thread
-    is_diagnostics_published_ = false;
-    if (diagnostic_thread_.joinable())
-    {
-        diagnostic_thread_.join();
-    }
+    stopCameraDiagnosticPublisher();
 
     //--- join buffer threads
     for (uint i = 0; i < streams_.size(); i++)
