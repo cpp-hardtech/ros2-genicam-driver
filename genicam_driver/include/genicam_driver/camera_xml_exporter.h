@@ -32,6 +32,7 @@
 // Std
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 // ROS
 #include <rclcpp/rclcpp.hpp>
@@ -67,6 +68,12 @@ class CameraXmlExporter : public GenicamNodeBase
      */
     [[nodiscard]] bool exportXmlDataToFile();
 
+    /**
+     * @brief Write the camera's GenICam XML to standard output.
+     * @return True if successful. False, otherwise.
+     */
+    [[nodiscard]] bool exportXmlDataToStdout();
+
   protected:
     /**
      * @overload
@@ -79,6 +86,9 @@ class CameraXmlExporter : public GenicamNodeBase
   protected:
     /// Path of output xml file.
     std::filesystem::path xml_file_path_;
+
+  private:
+    [[nodiscard]] std::string_view readXmlData() const;
 };
 
 }  // namespace genicam_driver

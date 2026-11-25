@@ -49,6 +49,17 @@ CameraXmlExporter::CameraXmlExporter(const rclcpp::NodeOptions& options) :
     //--- setup parameters
     setupParameters();
 
+    if (get_parameter("output_to_stdout").as_bool())
+    {
+        if (!get_parameter("xml_file").as_string().empty())
+        {
+            RCLCPP_ERROR(logger_, "output_to_stdout cannot be used with xml_file.");
+            return;
+        }
+        // Keep discovery and shutdown logs out of the XML document.
+        logger_.set_level(rclcpp::Logger::Level::Error);
+    }
+
     //--- open camera device
     CHECK_SUCCESS(discoverAndOpenCameraDevice(), logger_);
 
@@ -64,13 +75,47 @@ CameraXmlExporter::~CameraXmlExporter()
 }
 
 //==================================================================================================
-[[nodiscard]] bool CameraXmlExporter::exportXmlDataToFile()
+std::string_view CameraXmlExporter::readXmlData() const
 {
     if (!is_initialized_)
     {
         RCLCPP_ERROR(logger_, "'%s' is not initialized.", this->get_name());
+        return {};
+    }
+
+    size_t xml_size = 0;
+    const char* xml_data = arv_device_get_genicam_xml(p_device_, &xml_size);
+    if (xml_data == nullptr || xml_size == 0)
+    {
+        RCLCPP_ERROR(logger_, "Camera did not provide GenICam XML.");
+        return {};
+    }
+    return {xml_data, xml_size};
+}
+
+//==================================================================================================
+[[nodiscard]] bool CameraXmlExporter::exportXmlDataToStdout()
+{
+    const auto xml_data = readXmlData();
+    if (xml_data.empty())
+        return false;
+
+    std::cout.write(xml_data.data(), xml_data.size());
+    std::cout.flush();
+    if (!std::cout)
+    {
+        std::cerr << "Failed to write GenICam XML to standard output.\n";
         return false;
     }
+    return true;
+}
+
+//==================================================================================================
+[[nodiscard]] bool CameraXmlExporter::exportXmlDataToFile()
+{
+    const auto xml_data = readXmlData();
+    if (xml_data.empty())
+        return false;
 
     /// Path string of output xml file.
     std::string xml_file_str = get_parameter("xml_file").as_string();
@@ -89,15 +134,6 @@ CameraXmlExporter::~CameraXmlExporter()
     else
     {
         xml_file_path_ = std::filesystem::path(xml_file_str);
-    }
-
-    //--- extract XML before opening the output file
-    size_t xml_size        = 0;
-    const char* p_xml_data = arv_device_get_genicam_xml(p_device_, &xml_size);
-    if (p_xml_data == nullptr || xml_size == 0)
-    {
-        RCLCPP_ERROR(logger_, "Camera did not provide GenICam XML.");
-        return false;
     }
 
     std::error_code path_error;
@@ -137,7 +173,7 @@ CameraXmlExporter::~CameraXmlExporter()
         RCLCPP_WARN(logger_, "Output file already exists and will be overwritten. Path: %s",
                     xml_file_path_.c_str());
 
-    fout.write(p_xml_data, xml_size);
+    fout.write(xml_data.data(), xml_data.size());
     fout.close();
     if (!fout)
     {
@@ -161,6 +197,11 @@ void CameraXmlExporter::setupParameters()
       "Path to XML output file. If omitted, the XML data will be written into file with GUID as "
       "file name.";
     declare_parameter<std::string>("xml_file", "", xmlFile_desc);
+
+    auto stdout_desc = rcl_interfaces::msg::ParameterDescriptor{};
+    stdout_desc.description = "Write the XML to standard output. Leave xml_file empty.";
+    stdout_desc.read_only = true;
+    declare_parameter<bool>("output_to_stdout", false, stdout_desc);
 }
 
 }  // end namespace genicam_driver
