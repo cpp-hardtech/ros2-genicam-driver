@@ -87,6 +87,11 @@ class GenicamNodeBase : public rclcpp::Node
     bool isInitialized() const;
 
     /**
+     * @brief Returns true if Aravis reported loss of device control.
+     */
+    bool hasLostCameraControl() const;
+
+    /**
      * @brief List available camera devices.
      *
      * @return Number of available devices.
@@ -340,6 +345,9 @@ class GenicamNodeBase : public rclcpp::Node
 
     /// Flag indicating verbose output.
     bool is_verbose_enable_;
+
+  private:
+    std::atomic<bool> camera_control_lost_{false};
 };
 
 }  // namespace genicam_driver
