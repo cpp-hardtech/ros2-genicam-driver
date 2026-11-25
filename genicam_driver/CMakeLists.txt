@@ -35,6 +35,7 @@ find_package(image_transport REQUIRED)
 find_package(camera_info_manager REQUIRED)
 
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(genicam_driver_msgs REQUIRED)
@@ -70,6 +71,7 @@ set(LIBRARIES
   ${diagnostic_msgs_TARGETS}
   ${sensor_msgs_TARGETS}
   ${std_msgs_TARGETS}
+  ${std_srvs_TARGETS}
   ${camera_info_manager_TARGETS}
   ${cv_bridge_TARGETS}
   ${image_transport_TARGETS}

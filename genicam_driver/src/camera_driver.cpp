@@ -70,7 +70,7 @@ CameraDriver::CameraDriver(const std::string& name, const rclcpp::NodeOptions& o
   timestamp_offset_(0.0),
   is_diagnostics_published_(false),
   p_diagnostic_pub_(nullptr),
-  current_num_subscribers_(0)
+  is_acquiring_(false)
 {
 }
 
@@ -160,6 +160,18 @@ void CameraDriver::setupParameters()
     timestamp_offset_desc.description =
       "Offset in seconds added to the timestamp of the published image messages.";
     declare_parameter<double>("timestamp_offset", 0.0, timestamp_offset_desc);
+
+    auto acquisition_always_on_desc = rcl_interfaces::msg::ParameterDescriptor{};
+    acquisition_always_on_desc.description =
+      "Keep camera acquisition running when no image or camera_info subscribers are connected.";
+    acquisition_always_on_desc.read_only = true;
+    declare_parameter<bool>("acquisition_always_on", false, acquisition_always_on_desc);
+
+    auto software_trigger_desc = rcl_interfaces::msg::ParameterDescriptor{};
+    software_trigger_desc.description =
+      "Set the camera trigger source to Software and expose the trigger service.";
+    software_trigger_desc.read_only = true;
+    declare_parameter<bool>("software_trigger", false, software_trigger_desc);
 
     //--- register parameter change callback
     p_parameter_callback_handle_ = add_on_set_parameters_callback(
@@ -1173,6 +1185,45 @@ bool CameraDriver::initializeServices()
         std::bind(&CameraDriver::onCalculateWhiteBalanceOnceTriggered, this,
                   std::placeholders::_1, std::placeholders::_2));
 
+    if (!get_parameter("software_trigger").as_bool())
+        return true;
+
+    if (!ARV_IS_GC_COMMAND(arv_device_get_feature(p_device_, "TriggerSoftware")))
+    {
+        RCLCPP_ERROR(logger_, "Camera does not support TriggerSoftware.");
+        return false;
+    }
+
+    GuardedGError err;
+    arv_camera_set_trigger(p_camera_, "Software", err.ref());
+    if (err)
+    {
+        CHECK_GERROR_MSG(err, logger_, "In configuring software triggering.");
+        return false;
+    }
+
+    p_trigger_srv_ = this->create_service<std_srvs::srv::Trigger>(
+      "~/trigger",
+      [this](std_srvs::srv::Trigger::Request::SharedPtr,
+             std_srvs::srv::Trigger::Response::SharedPtr response)
+      {
+          std::lock_guard<std::mutex> lock(acquisition_mutex_);
+          if (!is_acquiring_)
+          {
+              response->success = false;
+              response->message = "Camera acquisition is inactive.";
+              return;
+          }
+
+          GuardedGError trigger_error;
+          arv_camera_software_trigger(p_camera_, trigger_error.ref());
+          response->success = !trigger_error;
+          if (trigger_error)
+          {
+              response->message = trigger_error->message;
+              CHECK_GERROR_MSG(trigger_error, logger_, "In executing 'TriggerSoftware'.");
+          }
+      });
     return true;
 }
 
@@ -1190,36 +1241,29 @@ void CameraDriver::handleMessageSubscriptionChange()
         return;
 
 #ifdef WITH_MATCHED_EVENTS
-    //--- get the maximum number of image and camera_info subscribers over all streams
-    size_t new_num_subscribers = 0;
-    for (const Stream& stream : streams_)
-        new_num_subscribers =
-          std::max({new_num_subscribers, stream.image_pub.getNumSubscribers(),
-                    stream.p_camera_info_pub->get_subscription_count()});
+    const bool should_acquire = get_parameter("acquisition_always_on").as_bool() ||
+      std::any_of(streams_.begin(), streams_.end(), [](const Stream& stream)
+      {
+          return stream.p_arv_stream && (stream.image_pub.getNumSubscribers() > 0 ||
+            stream.p_camera_info_pub->get_subscription_count() > 0);
+      });
 #else
     //--- without matched events the acquisition is always kept running
-    const size_t new_num_subscribers = 1;
+    const bool should_acquire = true;
 #endif
 
-    //--- if there are subscribers now and there were none before, start acquisition
-    if (new_num_subscribers > 0 && current_num_subscribers_ == 0)
+    if (should_acquire == is_acquiring_)
+        return;
+
+    const char* command = should_acquire ? "AcquisitionStart" : "AcquisitionStop";
+    arv_device_execute_command(p_device_, command, err.ref());
+    if (err)
     {
-        RCLCPP_INFO(logger_, "|-> Acquisition start.");
-
-        arv_device_execute_command(p_device_, "AcquisitionStart", err.ref());
-        CHECK_GERROR_MSG(err, logger_, "In executing 'AcquisitionStart'.");
+        CHECK_GERROR_MSG(err, logger_, std::string("In executing '") + command + "'.");
+        return;
     }
-    //--- if there are no subscribers now and there were subscribers before, stop
-    //--- acquisition
-    else if (new_num_subscribers == 0 && current_num_subscribers_ > 0)
-    {
-        RCLCPP_INFO(logger_, "->| Acquisition stop.");
-
-        arv_device_execute_command(p_device_, "AcquisitionStop", err.ref());
-        CHECK_GERROR_MSG(err, logger_, "In executing 'AcquisitionStop'.");
-    }
-
-    current_num_subscribers_ = static_cast<int>(new_num_subscribers);
+    is_acquiring_ = should_acquire;
+    RCLCPP_INFO(logger_, "%s", should_acquire ? "|-> Acquisition start." : "->| Acquisition stop.");
 }
 
 //==================================================================================================
@@ -1982,10 +2026,33 @@ sensor_msgs::msg::CameraInfo CameraDriver::makeCameraInfoMsg(
 {
     auto info = stream.p_camera_info_manager->getCameraInfo();
     info.header = image.header;
+    info.binning_x = std::max(stream.sensor.binning_x, 1);
+    info.binning_y = std::max(stream.sensor.binning_y, 1);
+
+    const auto unbin = [](int value, uint32_t binning)
+    {
+        return static_cast<uint32_t>(std::min<uint64_t>(
+          static_cast<uint64_t>(std::max(value, 0)) * binning, UINT32_MAX));
+    };
+    const auto x = unbin(stream.image_roi.x, info.binning_x);
+    const auto y = unbin(stream.image_roi.y, info.binning_y);
+    const auto width = unbin(stream.image_roi.width, info.binning_x);
+    const auto height = unbin(stream.image_roi.height, info.binning_y);
     if (info.width == 0)
-        info.width = image.width;
+        info.width = stream.sensor.width > 0 ? static_cast<uint32_t>(stream.sensor.width) : width;
     if (info.height == 0)
-        info.height = image.height;
+        info.height = stream.sensor.height > 0 ?
+          static_cast<uint32_t>(stream.sensor.height) : height;
+
+    info.roi = sensor_msgs::msg::RegionOfInterest();
+    if (x != 0 || y != 0 || width != info.width || height != info.height)
+    {
+        info.roi.x_offset = x;
+        info.roi.y_offset = y;
+        info.roi.width = width;
+        info.roi.height = height;
+        info.roi.do_rectify = info.k[0] != 0.0;
+    }
     return info;
 }
 
