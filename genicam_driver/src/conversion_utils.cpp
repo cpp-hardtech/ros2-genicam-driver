@@ -28,6 +28,8 @@
 
 #include "genicam_driver/conversion_utils.h"
 
+#include <limits>
+
 // ROS
 #include <rclcpp/rclcpp.hpp>
 
@@ -64,14 +66,30 @@ void shift(uint16_t* data, const size_t length, const size_t digits)
                             sensor_msgs::msg::Image::SharedPtr& out,
                             const size_t n_digits, const std::string out_format)
 {
-    if (!in)
+    if (!in || n_digits >= 16 || in->height == 0 ||
+        in->step > in->data.size() / in->height)
         return false;
 
-    // make a shallow copy (in-place operation on input)
-    out = in;
+    const auto channels = sensor_msgs::image_encodings::numChannels(out_format);
+    const auto samples_per_row = static_cast<uint64_t>(in->width) * channels;
+    if (samples_per_row * 2 > in->step)
+        return false;
 
-    // shift
-    shift(reinterpret_cast<uint16_t*>(out->data.data()), out->data.size() / 2, n_digits);
+    out = in;
+    const size_t low = out->is_bigendian ? 1 : 0;
+    const size_t high = 1 - low;
+    for (uint32_t y = 0; y < out->height; ++y)
+    {
+        auto* row = out->data.data() + static_cast<size_t>(y) * out->step;
+        for (size_t x = 0; x < samples_per_row; ++x)
+        {
+            auto* sample = row + 2 * x;
+            const uint32_t value = sample[low] | (static_cast<uint32_t>(sample[high]) << 8);
+            const uint32_t shifted = value << n_digits;
+            sample[low] = static_cast<uint8_t>(shifted);
+            sample[high] = static_cast<uint8_t>(shifted >> 8);
+        }
+    }
     out->encoding = out_format;
 
     return true;
@@ -225,55 +243,58 @@ void shift(uint16_t* data, const size_t length, const size_t digits)
 }
 
 //==================================================================================================
+namespace
+{
+bool unpackLsbRows(sensor_msgs::msg::Image::SharedPtr& in, sensor_msgs::msg::Image::SharedPtr& out,
+                   const unsigned bits, const unsigned channels, const std::string& out_format)
+{
+    if (!in || in->width == 0 || in->height == 0 || in->step > in->data.size() / in->height)
+        return false;
+
+    const auto samples_per_row = static_cast<uint64_t>(in->width) * channels;
+    const auto output_step = samples_per_row * 2;
+    if ((samples_per_row * bits + 7) / 8 > in->step ||
+        output_step > std::numeric_limits<uint32_t>::max() ||
+        output_step > std::numeric_limits<size_t>::max() / in->height)
+        return false;
+
+    // Keep reading the original bytes if the caller requests in-place conversion.
+    const auto input = in;
+    if (!out || out == input)
+        out = std::make_shared<sensor_msgs::msg::Image>();
+
+    out->header = input->header;
+    out->height = input->height;
+    out->width = input->width;
+    out->is_bigendian = false;
+    out->step = static_cast<uint32_t>(output_step);
+    out->encoding = out_format;
+    out->data.resize(static_cast<size_t>(out->step) * out->height);
+
+    const uint32_t mask = (1u << bits) - 1;
+    for (uint32_t y = 0; y < input->height; ++y)
+    {
+        const auto* source = input->data.data() + static_cast<size_t>(y) * input->step;
+        auto* target = out->data.data() + static_cast<size_t>(y) * out->step;
+        for (size_t x = 0; x < samples_per_row; ++x)
+        {
+            const uint64_t bit = static_cast<uint64_t>(x) * bits;
+            const auto* bytes = source + bit / 8;
+            const uint32_t word = bytes[0] | (static_cast<uint32_t>(bytes[1]) << 8);
+            const uint32_t sample = ((word >> (bit % 8)) & mask) << (16 - bits);
+            target[2 * x] = static_cast<uint8_t>(sample);
+            target[2 * x + 1] = static_cast<uint8_t>(sample >> 8);
+        }
+    }
+    return true;
+}
+}  // namespace
+
 [[nodiscard]] bool unpack10pMonoImg(sensor_msgs::msg::Image::SharedPtr& in,
                                     sensor_msgs::msg::Image::SharedPtr& out,
                                     const std::string out_format)
 {
-    if (!in)
-        return false;
-
-    if (!out)
-        out.reset(new sensor_msgs::msg::Image);
-
-    out->header       = in->header;
-    out->height       = in->height;
-    out->width        = in->width;
-    out->is_bigendian = in->is_bigendian;
-    out->step         = (8 * in->step) / 5;
-    out->data.resize((8 * in->data.size()) / 5);
-
-    // change pixel bit alignment from every 4*10 = 40 Bit = 5 Byte format LSB
-    // byte 4  | byte 3 | byte 2 | byte 1 | byte 0
-    // DDDDDDDD DDCCCCCC CCCCBBBB BBBBBBAA AAAAAAAA
-    // into 4*16 = 64 Bit = 8 Byte format
-    // bytes 7+6        | bytes 5+4       | bytes 3+2       | bytes 1+0
-    // DDDDDDDD DD000000 CCCCCCCC CC000000 BBBBBBBB BB000000 AAAAAAAA AA000000
-
-    uint8_t* from = in->data.data();
-    uint16_t* to  = reinterpret_cast<uint16_t*>(out->data.data());
-    // unpack 4 mono pixels per iteration
-    for (size_t i = 0; i < in->data.size() / 5; ++i)
-    {
-        std::memcpy(to, from, 2);
-        to[0] <<= 6;
-
-        std::memcpy(&to[1], &from[1], 2);
-        to[1] <<= 4;
-        to[1] &= 0b1111111111000000;
-
-        std::memcpy(&to[2], &from[2], 2);
-        to[2] <<= 2;
-        to[2] &= 0b1111111111000000;
-
-        std::memcpy(&to[3], &from[3], 2);
-        to[3] &= 0b1111111111000000;
-
-        to += 4;
-        from += 5;
-    }
-    out->encoding = out_format;
-
-    return true;
+    return unpackLsbRows(in, out, 10, 1, out_format);
 }
 
 //==================================================================================================
@@ -305,13 +326,13 @@ void shift(uint16_t* data, const size_t length, const size_t digits)
 
     uint8_t* from = in->data.data();
     uint8_t* to   = out->data.data();
-    // unpack 4 mono pixels per iteration
+    // unpack 2 mono pixels per iteration
     for (size_t i = 0; i < in->data.size() / 3; ++i)
     {
         to[0] = from[1] << 6;
         to[1] = from[0];
 
-        to[2] = from[1] & 0b11000000;
+        to[2] = (from[1] & 0b00110000) << 2;
         to[3] = from[2];
 
         to += 4;
@@ -327,43 +348,8 @@ void shift(uint16_t* data, const size_t length, const size_t digits)
                                 sensor_msgs::msg::Image::SharedPtr& out,
                                 const std::string out_format)
 {
-    if (!in)
-        return false;
-
-    if (!out)
-        out.reset(new sensor_msgs::msg::Image);
-
-    out->header       = in->header;
-    out->height       = in->height;
-    out->width        = in->width;
-    out->is_bigendian = in->is_bigendian;
-    out->step         = (4 * in->step) / 3;
-    out->data.resize((4 * in->data.size()) / 3);
-
-    // change pixel bit alignment from every 2*12 = 24 Bit = 3 Byte format LSB
-    //  byte 2 | byte 1 | byte 0
-    // BBBBBBBB BBBBAAAA AAAAAAAA
-    // into 2*16 = 32 Bit = 4 Byte format
-    //  bytes 3+2       | bytes 1+0
-    // BBBBBBBB BBBB0000 AAAAAAAA AAAA0000
-
-    uint8_t* from = in->data.data();
-    uint16_t* to  = reinterpret_cast<uint16_t*>(out->data.data());
-    // unpack 2 values per iteration
-    for (size_t i = 0; i < in->data.size() / 3; ++i)
-    {
-        std::memcpy(to, from, 2);
-        to[0] <<= 4;
-
-        std::memcpy(&to[1], &from[1], 2);
-        to[1] &= 0b1111111111110000;
-
-        to += 2;
-        from += 3;
-    }
-    out->encoding = out_format;
-
-    return true;
+    const auto channels = sensor_msgs::image_encodings::numChannels(out_format);
+    return unpackLsbRows(in, out, 12, channels, out_format);
 }
 
 //==================================================================================================

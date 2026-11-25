@@ -42,7 +42,7 @@ namespace genicam_driver
 {
 
 // Conversion functions from GenICam to ROS formats
-using ConversionFunction = std::function<void(sensor_msgs::msg::Image::SharedPtr& in,
+using ConversionFunction = std::function<bool(sensor_msgs::msg::Image::SharedPtr& in,
                                               sensor_msgs::msg::Image::SharedPtr& out)>;
 
 [[nodiscard]] bool renameImg(sensor_msgs::msg::Image::SharedPtr& in,

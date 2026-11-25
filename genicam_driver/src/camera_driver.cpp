@@ -1867,7 +1867,12 @@ void CameraDriver::processStreamBuffer(const uint stream_id)
         {
             sensor_msgs::msg::Image::SharedPtr p_cvt_img_msg =
               stream.p_buffer_pool->getRecyclableImg();
-            stream.cvt_pixel_format(p_img_msg, p_cvt_img_msg);
+            if (!stream.cvt_pixel_format(p_img_msg, p_cvt_img_msg))
+            {
+                RCLCPP_WARN_ONCE(logger_, "Image data does not match pixel format '%s'.",
+                                 p_img_msg->encoding.c_str());
+                continue;
+            }
             p_img_msg = p_cvt_img_msg;
         }
 
@@ -1940,7 +1945,8 @@ void CameraDriver::fillImageMsgMetadata(sensor_msgs::msg::Image::SharedPtr& p_im
     p_img_msg->width    = img_roi.width;
     p_img_msg->height   = img_roi.height;
     p_img_msg->encoding = sensor.pixel_format;
-    p_img_msg->step     = (img_roi.width * sensor.n_bits_pixel) / 8;
+    const auto row_bits = static_cast<uint64_t>(p_img_msg->width) * sensor.n_bits_pixel;
+    p_img_msg->step = static_cast<uint32_t>((row_bits + 7) / 8);
 }
 
 //==================================================================================================

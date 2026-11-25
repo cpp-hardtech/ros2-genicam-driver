@@ -145,6 +145,10 @@ install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 # Tests
 
 if(BUILD_TESTING)
+  add_executable(conversion_contract tests/conversion_contract.cpp)
+  target_link_libraries(conversion_contract ${LIBRARY_NAME})
+  add_test(NAME conversion_contract COMMAND conversion_contract)
+
   find_package(ament_cmake_copyright REQUIRED)
   ament_copyright()
   find_package(ament_cmake_cppcheck REQUIRED)
