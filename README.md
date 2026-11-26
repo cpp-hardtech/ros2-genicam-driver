@@ -137,7 +137,8 @@ transports:
 ## Configuration files
 
 - `genicam_driver/config/dynamic_parameters_example.yaml` — which device features become
-  runtime-changeable ROS 2 parameters.
+  runtime-changeable ROS 2 parameters. Each entry may include a `Description` for the
+  ROS 2 parameter descriptor.
 - `genicam_driver/config/camera_diagnostics_example.yaml` — which device features are
   published on `~/diagnostics` and under what names.
 

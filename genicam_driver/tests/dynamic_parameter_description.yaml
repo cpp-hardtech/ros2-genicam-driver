@@ -1,0 +1,5 @@
+- FeatureName: Width
+  Type: int
+- FeatureName: Height
+  Type: int
+  Description: Height of the captured image.

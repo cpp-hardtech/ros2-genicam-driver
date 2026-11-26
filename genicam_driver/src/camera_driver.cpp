@@ -1334,6 +1334,11 @@ void CameraDriver::setupDynamicParameters()
                         //--- if feature is available on device, declare it a parameter that can
                         //--- dynamically be changed
 
+                        auto param_desc        = rcl_interfaces::msg::ParameterDescriptor{};
+                        const auto description = feature_dict["Description"];
+                        if (description.IsDefined() && description.IsScalar())
+                            param_desc.description = description.Scalar();
+
                         //--- convert type string to lower case
                         std::transform(feature_type.begin(), feature_type.end(),
                                        feature_type.begin(), [](unsigned char c)
@@ -1342,10 +1347,6 @@ void CameraDriver::setupDynamicParameters()
                         //--- floating point type
                         if (feature_type == "float" || feature_type == "double")
                         {
-                            //--- set description
-                            auto param_desc        = rcl_interfaces::msg::ParameterDescriptor{};
-                            param_desc.description = feature_dict["Description"].as<std::string>();
-
                             //--- get bounds from device and from yaml file,
                             //--- and choose the intersection of both
                             rcl_interfaces::msg::FloatingPointRange fpRange;
@@ -1381,10 +1382,6 @@ void CameraDriver::setupDynamicParameters()
                         //--- integer type
                         else if (feature_type == "int")
                         {
-                            //--- set description
-                            auto param_desc        = rcl_interfaces::msg::ParameterDescriptor{};
-                            param_desc.description = feature_dict["Description"].as<std::string>();
-
                             //--- get bounds from device and from yaml file,
                             //--- and choose the intersection of both
                             rcl_interfaces::msg::IntegerRange intRange;
@@ -1419,10 +1416,6 @@ void CameraDriver::setupDynamicParameters()
                         //--- bool type
                         else if (feature_type == "bool")
                         {
-                            //--- set description
-                            auto param_desc        = rcl_interfaces::msg::ParameterDescriptor{};
-                            param_desc.description = feature_dict["Description"].as<std::string>();
-
                             //--- get current value as default
                             bool defVal = false;
                             getFeatureValue<bool>(feature_name, defVal);
@@ -1433,10 +1426,6 @@ void CameraDriver::setupDynamicParameters()
                         //--- string or other type
                         else
                         {
-                            //--- set description
-                            auto param_desc        = rcl_interfaces::msg::ParameterDescriptor{};
-                            param_desc.description = feature_dict["Description"].as<std::string>();
-
                             //--- get current value as default
                             std::string defVal = "";
                             getFeatureValue<std::string>(feature_name, defVal);
