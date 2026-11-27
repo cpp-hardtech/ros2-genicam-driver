@@ -184,5 +184,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 Distributed under the BSD 3-Clause License. The original copyright notice and the full
-license text are retained in [LICENSE](LICENSE). Provenance and attribution are documented
-in [NOTICE](NOTICE).
+license text are retained in [LICENSE](LICENSE).
