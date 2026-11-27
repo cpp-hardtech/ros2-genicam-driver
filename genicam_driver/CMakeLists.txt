@@ -151,6 +151,11 @@ if(BUILD_TESTING)
   target_link_libraries(conversion_contract ${LIBRARY_NAME})
   add_test(NAME conversion_contract COMMAND conversion_contract)
 
+  add_executable(dynamic_parameter_description tests/dynamic_parameter_description.cpp)
+  target_link_libraries(dynamic_parameter_description ${LIBRARY_NAME})
+  add_test(NAME dynamic_parameter_description COMMAND dynamic_parameter_description
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dynamic_parameter_description.yaml")
+
   find_package(ament_cmake_copyright REQUIRED)
   ament_copyright()
   find_package(ament_cmake_cppcheck REQUIRED)
