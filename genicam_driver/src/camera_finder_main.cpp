@@ -29,6 +29,7 @@
 #include <arv.h>
 #include <yaml-cpp/yaml.h>
 
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -66,11 +67,8 @@ const char* valueOrEmpty(const char* value)
     return value != nullptr ? value : "";
 }
 
-bool writeInventory()
+bool writeInventory(unsigned int device_count)
 {
-    arv_update_device_list();
-    const auto device_count = arv_get_n_devices();
-
     YAML::Emitter output;
     output.SetStringFormat(YAML::DoubleQuoted);
     output << YAML::BeginSeq;
@@ -100,6 +98,12 @@ int runFinder()
     auto logger = node.get_logger();
     const auto output_format = node.declare_parameter<std::string>("output_format", "text");
     const auto transport = node.declare_parameter<std::string>("transport", "all");
+    const auto minimum_devices = node.declare_parameter<std::int64_t>("minimum_devices", 0);
+    if (minimum_devices < 0)
+    {
+        std::cerr << "minimum_devices must be nonnegative.\n";
+        return EXIT_FAILURE;
+    }
     if (output_format != "text" && output_format != "yaml")
     {
         RCLCPP_ERROR(logger, "Unknown output_format '%s'. Expected text or yaml.",
@@ -118,18 +122,29 @@ int runFinder()
                      transport.c_str());
         return EXIT_FAILURE;
     }
+    unsigned int device_count;
     if (output_format == "text")
     {
         RCLCPP_DEBUG(logger, "Discovering cameras with transport '%s'.", transport.c_str());
-        node.listAvailableCameraDevices();
-        return EXIT_SUCCESS;
+        device_count = node.listAvailableCameraDevices();
+    }
+    else
+    {
+        // Keep the node's shutdown log out of the YAML document.
+        logger.set_level(rclcpp::Logger::Level::Warn);
+        arv_update_device_list();
+        device_count = arv_get_n_devices();
+        if (!writeInventory(device_count))
+        {
+            std::cerr << "Failed to write the YAML camera inventory.\n";
+            return EXIT_FAILURE;
+        }
     }
 
-    // Keep the node's shutdown log out of the YAML document.
-    logger.set_level(rclcpp::Logger::Level::Warn);
-    if (!writeInventory())
+    if (device_count < static_cast<std::uint64_t>(minimum_devices))
     {
-        std::cerr << "Failed to write the YAML camera inventory.\n";
+        std::cerr << "Found " << device_count << " camera(s). minimum_devices requires "
+                  << minimum_devices << ".\n";
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

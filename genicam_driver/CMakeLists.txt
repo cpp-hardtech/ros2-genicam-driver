@@ -147,6 +147,11 @@ install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 # Tests
 
 if(BUILD_TESTING)
+  add_test(NAME camera_finder_minimum_devices
+    COMMAND "${CMAKE_COMMAND}" "-DFINDER=$<TARGET_FILE:${CAMERA_FINDER_EXEC_NAME}>"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/camera_finder_minimum.cmake")
+  set_tests_properties(camera_finder_minimum_devices PROPERTIES TIMEOUT 20)
+
   add_executable(conversion_contract tests/conversion_contract.cpp)
   target_link_libraries(conversion_contract ${LIBRARY_NAME})
   add_test(NAME conversion_contract COMMAND conversion_contract)

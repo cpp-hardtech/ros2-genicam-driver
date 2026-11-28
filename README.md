@@ -73,6 +73,16 @@ model, serial number, and protocol for each camera. An empty discovery writes `[
 ros2 run genicam_driver camera_finder --ros-args -p transport:=GigEVision -p output_format:=yaml
 ```
 
+For a readiness check, set `minimum_devices` to a nonnegative integer.
+When fewer cameras match the selected transport, `camera_finder` still emits
+its text or YAML inventory and exits with status 1. The default 0 allows an
+empty inventory.
+
+```bash
+ros2 run genicam_driver camera_finder --ros-args \
+  -p transport:=GigEVision -p output_format:=yaml -p minimum_devices:=2
+```
+
 ### 2. Start the driver
 
 ```bash
