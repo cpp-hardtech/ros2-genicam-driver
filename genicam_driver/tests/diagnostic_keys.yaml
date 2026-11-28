@@ -1,0 +1,21 @@
+- FeatureName: Width
+  Type: int
+  Key: image_width
+- FeatureName: Height
+  Type: int
+- FeatureName: PixelFormat
+  Type: string
+  Key: ""
+- FeatureName: Width
+  Type: int
+  Key: [malformed]
+- FeatureName: TriggerMode
+  Type: string
+  Key: trigger_mode
+  Selectors:
+    - FeatureName: TriggerSelector
+      Type: string
+      Value: FrameStart
+    - FeatureName: TriggerSelector
+      Type: string
+      Value: AcquisitionStart

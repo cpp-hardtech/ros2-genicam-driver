@@ -140,7 +140,11 @@ transports:
   runtime-changeable ROS 2 parameters. Each entry may include a `Description` for the
   ROS 2 parameter descriptor.
 - `genicam_driver/config/camera_diagnostics_example.yaml` — which device features are
-  published on `~/diagnostics` and under what names.
+  published on `~/diagnostics`. An optional `Key` sets the published name while
+  `FeatureName` still identifies the device feature. For example, `Key: image_width`
+  publishes the reading of `FeatureName: Width` as `image_width`. If `Key` is omitted,
+  empty, or non-scalar, the published name defaults to the feature name. Entries with
+  selectors append `-<selector value>` to the published name.
 
 Feature names and accepted values are defined by the device and can be listed with
 `camera_xml_exporter`, which writes the GenICam XML description of the camera:

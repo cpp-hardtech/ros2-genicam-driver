@@ -156,6 +156,11 @@ if(BUILD_TESTING)
   add_test(NAME dynamic_parameter_description COMMAND dynamic_parameter_description
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/dynamic_parameter_description.yaml")
 
+  add_executable(diagnostic_keys tests/diagnostic_keys.cpp)
+  target_link_libraries(diagnostic_keys ${LIBRARY_NAME})
+  add_test(NAME diagnostic_keys COMMAND diagnostic_keys
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostic_keys.yaml")
+
   find_package(ament_cmake_copyright REQUIRED)
   ament_copyright()
   find_package(ament_cmake_cppcheck REQUIRED)
