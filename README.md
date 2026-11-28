@@ -122,7 +122,7 @@ transports:
 | --- | --- | --- | --- |
 | `guid` | string | — | Device identifier reported by `camera_finder`, or a GigE Vision IP address. |
 | `stream_names` | string[] | `[]` | Stream names used in the topic namespace when several streams are driven. |
-| `camera_info_urls` | string[] | `[]` | Calibration paths or URLs, one per stream. An omitted or blank entry tries the default file and allows uncalibrated streaming if it is unavailable. |
+| `camera_info_urls` | string[] | `[]` | Calibration paths or URLs, one per stream. Relative paths use the node's working directory. An omitted or blank entry tries the default file and allows uncalibrated streaming if it is unavailable. |
 | `frame_id` | string | `""` | Coordinate frame attached to published images and camera info. |
 | `dynamic_parameters_yaml_url` | string | `""` | YAML file listing device features to expose as dynamic ROS 2 parameters. |
 | `diagnostic_yaml_url` | string | `""` | YAML file listing device features to publish as diagnostics. |

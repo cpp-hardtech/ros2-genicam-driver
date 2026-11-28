@@ -151,6 +151,15 @@ if(BUILD_TESTING)
   target_link_libraries(conversion_contract ${LIBRARY_NAME})
   add_test(NAME conversion_contract COMMAND conversion_contract)
 
+  add_executable(camera_info_paths tests/camera_info_paths.cpp)
+  target_link_libraries(camera_info_paths ${LIBRARY_NAME})
+  set(camera_info_test_dir "${CMAKE_CURRENT_BINARY_DIR}/camera info paths")
+  configure_file(tests/camera_info_paths.yaml "${camera_info_test_dir}/calibration.yaml" COPYONLY)
+  foreach(path_mode relative default)
+    add_test(NAME camera_info_${path_mode}_path COMMAND camera_info_paths ${path_mode}
+      WORKING_DIRECTORY "${camera_info_test_dir}")
+  endforeach()
+
   add_executable(dynamic_parameter_description tests/dynamic_parameter_description.cpp)
   target_link_libraries(dynamic_parameter_description ${LIBRARY_NAME})
   add_test(NAME dynamic_parameter_description COMMAND dynamic_parameter_description
