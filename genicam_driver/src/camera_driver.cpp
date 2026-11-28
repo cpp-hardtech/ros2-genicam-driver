@@ -1382,15 +1382,10 @@ void CameraDriver::setupDynamicParameters()
                             if (fpRange.from_value != DBL_MIN && fpRange.to_value != DBL_MAX)
                                 param_desc.floating_point_range = {fpRange};
 
-                            //--- get current value as default and restrict it to 3 chars after
-                            //--- decimal point
-                            float defVal = 0;
-                            getFeatureValue<float>(feature_name, defVal);
-                            int defVal_int = static_cast<int>(defVal * 1000.f);
-                            defVal         = static_cast<float>(defVal_int) / 1000;
-
-                            //--- declare parameter
-                            declare_parameter<float>(feature_name, defVal, param_desc);
+                            // Use the device's full precision for the ROS parameter default.
+                            double defVal = 0.0;
+                            getFeatureValue<double>(feature_name, defVal);
+                            declare_parameter<double>(feature_name, defVal, param_desc);
                         }
                         //--- integer type
                         else if (feature_type == "int")
