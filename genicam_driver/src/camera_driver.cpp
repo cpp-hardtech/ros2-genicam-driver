@@ -1704,6 +1704,9 @@ void CameraDriver::publishCameraDiagnosticsLoop(double rate) const
                 // if feature name is found in implemented_feature list and if enabled
                 if (isFeatureAvailableFn(feature_name))
                 {
+                    const auto key_node        = feature_dict["Key"];
+                    const auto key             = key_node.IsScalar() ? key_node.Scalar() : "";
+                    const auto& diagnostic_key = key.empty() ? feature_name : key;
                     diagnostic_msgs::msg::KeyValue kv_pair;
 
                     // if 'selectors' which correspond to the feature_name are defined
@@ -1744,7 +1747,7 @@ void CameraDriver::publishCameraDiagnosticsLoop(double rate) const
                                     setFeatureValueFromStrFn(selector_feature_name, selector_type,
                                                              selector_value);
 
-                                    kv_pair.key   = feature_name + "-" + selector_value;
+                                    kv_pair.key   = diagnostic_key + "-" + selector_value;
                                     kv_pair.value = getFeatureValueAsStrFn(feature_name,
                                                                            feature_type);
 
@@ -1765,7 +1768,7 @@ void CameraDriver::publishCameraDiagnosticsLoop(double rate) const
                     }
                     else
                     {
-                        kv_pair.key   = feature_name;
+                        kv_pair.key   = diagnostic_key;
                         kv_pair.value = getFeatureValueAsStrFn(feature_name, feature_type);
 
                         cam_diagnostic_msg.data.push_back(diagnostic_msgs::msg::KeyValue(kv_pair));
