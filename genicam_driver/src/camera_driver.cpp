@@ -30,8 +30,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <limits>
 #include <optional>
+#include <system_error>
 
 // ROS
 #include <image_transport/camera_common.hpp>
@@ -260,21 +262,31 @@ bool CameraDriver::setupCameraStreamStructs()
         const bool use_default_url = camera_info_urls[i].empty();
         if (use_default_url)
         {
+            stream.camera_info_url = GUID_STR;
             if (streams_.size() > 1)
-                stream.camera_info_url = "file://" + GUID_STR + "_" + stream.name + ".yaml";
-            else
-                stream.camera_info_url = "file://" + GUID_STR + ".yaml";
+                stream.camera_info_url += "_" + stream.name;
+            stream.camera_info_url += ".yaml";
 
-            // replace whitespaces in url (coming from GUID) with '_'
+            // Replace spaces in the generated filename before resolving the directory.
             std::replace(stream.camera_info_url.begin(), stream.camera_info_url.end(), ' ', '_');
         }
         else
         {
             stream.camera_info_url = camera_info_urls[i];
+        }
 
-            //--- accept bare filesystem paths and URLs supported by CameraInfoManager.
-            if (stream.camera_info_url.find("://") == std::string::npos)
-                stream.camera_info_url = "file://" + stream.camera_info_url;
+        // CameraInfoManager requires absolute paths in file URLs.
+        std::error_code calibration_path_error;
+        if (use_default_url || stream.camera_info_url.find("://") == std::string::npos)
+        {
+            const auto path =
+              std::filesystem::absolute(stream.camera_info_url, calibration_path_error);
+            if (calibration_path_error)
+                RCLCPP_ERROR(logger_, "Could not resolve calibration path '%s': %s",
+                             stream.camera_info_url.c_str(),
+                             calibration_path_error.message().c_str());
+            else
+                stream.camera_info_url = "file://" + path.string();
         }
 
         //--- setup image topic and create publisher
@@ -317,7 +329,8 @@ bool CameraDriver::setupCameraStreamStructs()
         // Multi-source Camera. Uncertain if this is still relevant.
         stream.p_camera_info_manager.reset(
           new camera_info_manager::CameraInfoManager(this, stream.sensor.frame_id));
-        if (!stream.p_camera_info_manager->loadCameraInfo(stream.camera_info_url))
+        if (calibration_path_error ||
+            !stream.p_camera_info_manager->loadCameraInfo(stream.camera_info_url))
         {
             if (!use_default_url)
                 return false;
