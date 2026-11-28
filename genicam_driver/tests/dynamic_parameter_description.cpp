@@ -24,6 +24,8 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -44,7 +46,17 @@ class TestCameraDriver : public genicam_driver::CameraDriver
         if (!p_camera_)
             throw std::runtime_error("Could not open the Aravis fake camera");
         p_device_ = arv_camera_get_device(p_camera_);
+        if (!setFeatureValue("AcquisitionFramePeriod", std::int64_t{33333}))
+            throw std::runtime_error("Could not set the fake camera frame period");
         setupDynamicParameters();
+    }
+
+    double deviceFrameRate() const
+    {
+        double rate = 0.0;
+        if (!getFeatureValue("AcquisitionFrameRate", rate))
+            throw std::runtime_error("Could not read the fake camera frame rate");
+        return rate;
     }
 
   private:
@@ -85,8 +97,13 @@ int main(int argc, char** argv)
         const auto height_description = driver.describe_parameter("Height").description;
         std::cout << "Width=" << width << " description='" << width_description
                   << "' Height=" << height << " description='" << height_description << "'\n";
+        const double device_rate    = driver.deviceFrameRate();
+        const double parameter_rate = driver.get_parameter("AcquisitionFrameRate").as_double();
+        std::cout << std::setprecision(16) << "Device frame rate=" << device_rate
+                  << " ROS frame rate=" << parameter_rate << '\n';
         valid = width == 512 && height == 512 && width_description.empty() &&
-                height_description == "Height of the captured image.";
+                height_description == "Height of the captured image." &&
+                parameter_rate == device_rate;
     }
     catch (const std::exception& error)
     {
